@@ -1,0 +1,15 @@
+[Unit]
+Description=AppBuilder backup's script
+Documentation=https://github.com/guyyoo/ab_backup
+After=network.target
+
+[Service]
+WorkingDirectory=
+EnvironmentFile=
+Type=simple
+User=
+ExecStart=
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
