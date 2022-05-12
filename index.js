@@ -6,19 +6,21 @@ const nodeCron = require("node-cron");
 
 if (process.env.NODE_ENV !== "production") dotenv.config();
 
+const config = require(`${process.env.AB_PATH}/config/local.js`);
+
 const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
    const mysql = {
-      user: process.env.MYSQL_USERNAME,
-      password: process.env.MYSQL_PASSWORD,
-      db: process.env.MYSQL_DATABASE,
+      user: config.datastores.appbuilder.user,
+      password: config.datastores.appbuilder.password,
+      database: config.datastores.appbuilder.database,
       tenantUUIDs: [],
    };
    // const mysql = {
-   //    host: process.env.MYSQL_HOST,
-   //    port: process.env.MYSQL_PORT,
-   //    user: process.env.MYSQL_USERNAME,
-   //    password: process.env.MYSQL_PASSWORD,
-   //    db: process.env.MYSQL_DATABASE,
+   //    host: "127.0.0.1",
+   //    port: config.datastores.appbuilder.port,
+   //    user: config.datastores.appbuilder.user,
+   //    password: config.datastores.appbuilder.password,
+   //    database: config.datastores.appbuilder.database,
    //    tenantUUIDs: [],
    // };
    const fileExpirationInDays = process.env.FILE_EXPIRATION_IN_DAYS;
@@ -46,11 +48,11 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
    );
    mysql.tenantUUIDs = shelljs
       .exec(
-         `docker exec ${containerDatabaseID} sh -c "mysql -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" -e 'select * from \\\`${mysql.db}-admin\\\`.\\\`site_tenant\\\`'" | awk 'FNR > 1 {print $2}'`,
+         `docker exec ${containerDatabaseID} sh -c "mysql -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" -e 'select * from \\\`${mysql.database}-admin\\\`.\\\`site_tenant\\\`'" | awk 'FNR > 1 {print $2}'`,
          { silent: true }
       )
       // .exec(
-      //    `docker exec ${containerDatabaseID} sh -c "mysql -u\\"${mysql.user}\\" -p\\"${mysql.password}\\"  -h ${mysql.host} -P ${mysql.port} -e 'select * from \\\`${mysql.db}-admin\\\`.\\\`site_tenant\\\`'" | awk 'FNR > 1 {print $2}'`,
+      //    `docker exec ${containerDatabaseID} sh -c "mysql -u\\"${mysql.user}\\" -p\\"${mysql.password}\\"  -h ${mysql.host} -P ${mysql.port} -e 'select * from \\\`${mysql.database}-admin\\\`.\\\`site_tenant\\\`'" | awk 'FNR > 1 {print $2}'`,
       //    { silent: true }
       // )
       .toString()
@@ -58,13 +60,8 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
       .filter((e) => e !== "");
 
    for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
-      const dateNowString = new Date(Date.now()).toString();
-      const dateNowStringFormatCommandLine = dateNowString
-         .replace(/\s/g, "\\ ")
-         .replace(/\(/g, "\\(")
-         .replace(/\)/g, "\\)")
-         .replace(/:/g, "#")
-      const dbName = `${mysql.db}-${mysql.tenantUUIDs[index]}`;
+      const dateNowString = new Date().toISOString();
+      const dbName = `${mysql.database}-${mysql.tenantUUIDs[index]}`;
       const pathLocalDirectoryTenant = path.join(
          pathLocalStorage,
          mysql.tenantUUIDs[index]
@@ -77,12 +74,12 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
       const pathContainerFileSQL = `${pathContainerDatabaseStorage}/${dbName}.sql`;
       const commands = [
          `docker exec ${containerDatabaseID} sh -c "mysqldump --max_allowed_packet=512M -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" \\"${dbName}\\" > ${pathContainerFileSQL} 2> /dev/null"`,
-         // `docker exec ${containerDatabaseID} sh -c "mysqldump --max_allowed_packet=512M -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" -h ${mysql.host} -P ${mysql.port} \\"${dbName}\\" > ${pathContainerFileSQL} 2> /dev/null"`,
          `docker cp ${containerDatabaseID}:${pathContainerFileSQL} ${pathLocalDirectoryTenant}`,
+         // `mysqldump --max_allowed_packet=512M -u"${mysql.user}" -p"${mysql.password}" -h ${mysql.host} -P ${mysql.port} "${dbName}" > ${pathLocalDirectoryTenant} 2> /dev/null`,
          `docker exec ${containerFileProcessorID} sh -c "mkdir -p ${pathCointainerDirectoryTenant}"`,
          `docker cp ${containerFileProcessorID}:${pathCointainerDirectoryTenant}/. ${pathLocalDirectoryData}`,
          `cd ${pathLocalStorage}`,
-         `tar -czvf \\(${dateNowStringFormatCommandLine}\\)\\ ${mysql.tenantUUIDs[index]}.tar.gz ${mysql.tenantUUIDs[index]}`,
+         `tar -czvf ${dateNowString}_${mysql.tenantUUIDs[index]}.tar.gz ${mysql.tenantUUIDs[index]}`,
       ].join(" && ");
 
       shelljs.mkdir("-p", pathLocalDirectoryData);
