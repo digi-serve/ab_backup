@@ -1,4 +1,5 @@
 const path = require("path");
+const https = require("https");
 
 const dotenv = require("dotenv");
 const shelljs = require("shelljs");
@@ -9,6 +10,10 @@ if (process.env.NODE_ENV !== "production") dotenv.config();
 const config = require(`${process.env.AB_PATH}/config/local.js`);
 
 const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
+   https.get(process.env.HEALTH_CHECK_URL).on('error', (error) => {
+      console.log(`Ping failed: ${error}`);
+   });
+
    const mysql = {
       user: config.datastores.appbuilder.user,
       password: config.datastores.appbuilder.password,
@@ -60,7 +65,7 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
       .filter((e) => e !== "");
 
    for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
-      const dateNowString = new Date().toISOString();
+      const dateNowString = new Date().toISOString().replace(/:/g, ".");
       const dbName = `${mysql.database}-${mysql.tenantUUIDs[index]}`;
       const pathLocalDirectoryTenant = path.join(
          pathLocalStorage,
