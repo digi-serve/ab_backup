@@ -1,4 +1,5 @@
 const path = require("path");
+const https = require("https");
 
 const dotenv = require("dotenv");
 const shelljs = require("shelljs");
@@ -42,6 +43,8 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
    const pathContainerDatabaseStorage = "/root/storage";
    const pathContainerFileProcessorTenant = "/data";
 
+   let healtcheck = process.env.HEALTH_CHECK_URL ?? null;
+
    shelljs.mkdir("-p", pathLocalStorage);
    shelljs.exec(
       `docker exec ${containerDatabaseID} sh -c "mkdir -p ${pathContainerDatabaseStorage}"`
@@ -60,7 +63,7 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
       .filter((e) => e !== "");
 
    for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
-      const dateNowString = new Date().toISOString();
+      const dateNowString = new Date().toISOString().replace(/:/g, ".");
       const dbName = `${mysql.database}-${mysql.tenantUUIDs[index]}`;
       const pathLocalDirectoryTenant = path.join(
          pathLocalStorage,
@@ -107,11 +110,18 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
 
          retry = 0;
       } catch (error) {
+         healtcheck = `${process.env.HEALTH_CHECK_URL}/fail`;
          console.error(error);
          console.error();
          index--;
          retry++;
       } finally {
+         if(process.env.HEALTH_CHECK_URL) {
+            https.get(healtcheck).on('error', (error) => {
+               console.log(`Ping failed: ${error}`);
+            });
+         }
+
          console.log(
             `Backup DB at "${dateNowString}": ${
                !retry ? "Success" : "Fail"
