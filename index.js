@@ -10,10 +10,6 @@ if (process.env.NODE_ENV !== "production") dotenv.config();
 const config = require(`${process.env.AB_PATH}/config/local.js`);
 
 const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
-   https.get(process.env.HEALTH_CHECK_URL).on('error', (error) => {
-      console.log(`Ping failed: ${error}`);
-   });
-
    const mysql = {
       user: config.datastores.appbuilder.user,
       password: config.datastores.appbuilder.password,
@@ -46,6 +42,8 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
    const pathLocalStorage = path.resolve("storage");
    const pathContainerDatabaseStorage = "/root/storage";
    const pathContainerFileProcessorTenant = "/data";
+
+   let healtcheck = process.env.HEALTH_CHECK_URL ?? null;
 
    shelljs.mkdir("-p", pathLocalStorage);
    shelljs.exec(
@@ -112,11 +110,18 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
 
          retry = 0;
       } catch (error) {
+         healtcheck = `${process.env.HEALTH_CHECK_URL}/fail`;
          console.error(error);
          console.error();
          index--;
          retry++;
       } finally {
+         if(process.env.HEALTH_CHECK_URL) {
+            https.get(healtcheck).on('error', (error) => {
+               console.log(`Ping failed: ${error}`);
+            });
+         }
+
          console.log(
             `Backup DB at "${dateNowString}": ${
                !retry ? "Success" : "Fail"
