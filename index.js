@@ -1,163 +1,165 @@
+const fs = require("fs");
 const path = require("path");
 const https = require("https");
 
 const dotenv = require("dotenv");
 const shelljs = require("shelljs");
-const nodeCron = require("node-cron");
 
 if (process.env.NODE_ENV !== "production") dotenv.config();
 
 const config = require(`${process.env.AB_PATH}/config/local.js`);
 
-const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
-   const mysql = {
-      user: config.datastores.appbuilder.user,
-      password: config.datastores.appbuilder.password,
-      database: config.datastores.appbuilder.database,
-      tenantUUIDs: [],
-   };
-   // const mysql = {
-   //    host: "127.0.0.1",
-   //    port: config.datastores.appbuilder.port,
-   //    user: config.datastores.appbuilder.user,
-   //    password: config.datastores.appbuilder.password,
-   //    database: config.datastores.appbuilder.database,
-   //    tenantUUIDs: [],
-   // };
-   const fileExpirationInDays = process.env.FILE_EXPIRATION_IN_DAYS;
-   const containerDatabaseID = shelljs
-      .exec("docker ps | grep \"_db\" | awk '{print $1}'", { silent: true })
-      .toString()
-      .split("\n")
-      .filter((e) => e !== "")
-      .join("");
-   const containerFileProcessorID = shelljs
-      .exec("docker ps | grep \"_file_processor\" | awk '{print $1}'", {
-         silent: true,
-      })
-      .toString()
-      .split("\n")
-      .filter((e) => e !== "")
-      .join("");
-   const pathLocalStorage = path.resolve("storage");
-   const pathContainerDatabaseStorage = "/root/storage";
-   const pathContainerFileProcessorTenant = "/data";
+const mysql = {
+   user: config.datastores.appbuilder.user,
+   password: config.datastores.appbuilder.password,
+   database: config.datastores.appbuilder.database,
+   tenantUUIDs: [],
+};
+// const mysql = {
+//    host: "127.0.0.1",
+//    port: config.datastores.appbuilder.port,
+//    user: config.datastores.appbuilder.user,
+//    password: config.datastores.appbuilder.password,
+//    database: config.datastores.appbuilder.database,
+//    tenantUUIDs: [],
+// };
+const fileExpirationInDays = process.env.FILE_EXPIRATION_IN_DAYS;
+const containerDatabaseID = shelljs
+   .exec("docker ps | grep \"_db\" | awk '{print $1}'", { silent: true })
+   .toString()
+   .split("\n")
+   .filter((e) => e !== "")
+   .join("");
+const containerFileProcessorID = shelljs
+   .exec("docker ps | grep \"_file_processor\" | awk '{print $1}'", {
+      silent: true,
+   })
+   .toString()
+   .split("\n")
+   .filter((e) => e !== "")
+   .join("");
+const pathLocalStorage = process.env.STORAGE_PATH;
+const pathContainerDatabaseStorage = "/root/storage";
+const pathContainerFileProcessorTenant = "/data";
 
-   let healtcheck = process.env.HEALTH_CHECK_URL ?? null;
+let healtcheck = process.env.HEALTH_CHECK_URL ?? null;
 
-   shelljs.mkdir("-p", pathLocalStorage);
-   shelljs.exec(
-      `docker exec ${containerDatabaseID} sh -c "mkdir -p ${pathContainerDatabaseStorage}"`
+shelljs.mkdir("-p", pathLocalStorage);
+shelljs.exec(
+   `docker exec ${containerDatabaseID} sh -c "mkdir -p ${pathContainerDatabaseStorage}"`
+);
+mysql.tenantUUIDs = shelljs
+   .exec(
+      `docker exec ${containerDatabaseID} sh -c "mysql -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" -e 'select * from \\\`${mysql.database}-admin\\\`.\\\`site_tenant\\\`'" | awk 'FNR > 1 {print $2}'`,
+      { silent: true }
+   )
+   // .exec(
+   //    `docker exec ${containerDatabaseID} sh -c "mysql -u\\"${mysql.user}\\" -p\\"${mysql.password}\\"  -h ${mysql.host} -P ${mysql.port} -e 'select * from \\\`${mysql.database}-admin\\\`.\\\`site_tenant\\\`'" | awk 'FNR > 1 {print $2}'`,
+   //    { silent: true }
+   // )
+   .toString()
+   .split("\n")
+   .filter((e) => e !== "");
+
+let tarFileList = [];
+
+for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
+   const dateNowString = new Date().toISOString().replace(/:/g, ".");
+   const dbName = `${mysql.database}-${mysql.tenantUUIDs[index]}`;
+   const pathLocalDirectoryTenant = path.join(
+      pathLocalStorage,
+      mysql.tenantUUIDs[index]
    );
-   mysql.tenantUUIDs = shelljs
-      .exec(
-         `docker exec ${containerDatabaseID} sh -c "mysql -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" -e 'select * from \\\`${mysql.database}-admin\\\`.\\\`site_tenant\\\`'" | awk 'FNR > 1 {print $2}'`,
-         { silent: true }
-      )
-      // .exec(
-      //    `docker exec ${containerDatabaseID} sh -c "mysql -u\\"${mysql.user}\\" -p\\"${mysql.password}\\"  -h ${mysql.host} -P ${mysql.port} -e 'select * from \\\`${mysql.database}-admin\\\`.\\\`site_tenant\\\`'" | awk 'FNR > 1 {print $2}'`,
-      //    { silent: true }
-      // )
-      .toString()
-      .split("\n")
-      .filter((e) => e !== "");
+   const pathLocalDirectoryData = path.join(
+      `${pathLocalDirectoryTenant}`,
+      "data"
+   );
+   const pathCointainerDirectoryTenant = `${pathContainerFileProcessorTenant}/${mysql.tenantUUIDs[index]}`;
+   const pathContainerFileSQL = `${pathContainerDatabaseStorage}/${dbName}.sql`;
+   const tarFilename = `${dateNowString}_${mysql.tenantUUIDs[index]}.tar.gz`;
+   const commands = [
+      `docker exec ${containerDatabaseID} sh -c "mysqldump --max_allowed_packet=512M -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" \\"${dbName}\\" > ${pathContainerFileSQL} 2> /dev/null"`,
+      `docker cp ${containerDatabaseID}:${pathContainerFileSQL} ${pathLocalDirectoryTenant}`,
+      // `mysqldump --max_allowed_packet=512M -u"${mysql.user}" -p"${mysql.password}" -h ${mysql.host} -P ${mysql.port} "${dbName}" > ${pathLocalDirectoryTenant} 2> /dev/null`,
+      `docker exec ${containerFileProcessorID} sh -c "mkdir -p ${pathCointainerDirectoryTenant}"`,
+      `docker cp ${containerFileProcessorID}:${pathCointainerDirectoryTenant}/. ${pathLocalDirectoryData}`,
+      `cd ${pathLocalStorage}`,
+      `tar -czvf ${tarFilename} ${mysql.tenantUUIDs[index]}`,
+   ].join(" && ");
 
-   let tarFileList = [];
+   shelljs.mkdir("-p", pathLocalDirectoryData);
 
-   for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
-      const dateNowString = new Date().toISOString().replace(/:/g, ".");
-      const dbName = `${mysql.database}-${mysql.tenantUUIDs[index]}`;
-      const pathLocalDirectoryTenant = path.join(
-         pathLocalStorage,
-         mysql.tenantUUIDs[index]
-      );
-      const pathLocalDirectoryData = path.join(
-         `${pathLocalDirectoryTenant}`,
-         "data"
-      );
-      const pathCointainerDirectoryTenant = `${pathContainerFileProcessorTenant}/${mysql.tenantUUIDs[index]}`;
-      const pathContainerFileSQL = `${pathContainerDatabaseStorage}/${dbName}.sql`;
-      const tarFilename = `${dateNowString}_${mysql.tenantUUIDs[index]}.tar.gz`;
-      const commands = [
-         `docker exec ${containerDatabaseID} sh -c "mysqldump --max_allowed_packet=512M -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" \\"${dbName}\\" > ${pathContainerFileSQL} 2> /dev/null"`,
-         `docker cp ${containerDatabaseID}:${pathContainerFileSQL} ${pathLocalDirectoryTenant}`,
-         // `mysqldump --max_allowed_packet=512M -u"${mysql.user}" -p"${mysql.password}" -h ${mysql.host} -P ${mysql.port} "${dbName}" > ${pathLocalDirectoryTenant} 2> /dev/null`,
-         `docker exec ${containerFileProcessorID} sh -c "mkdir -p ${pathCointainerDirectoryTenant}"`,
-         `docker cp ${containerFileProcessorID}:${pathCointainerDirectoryTenant}/. ${pathLocalDirectoryData}`,
-         `cd ${pathLocalStorage}`,
-         `tar -czvf ${tarFilename} ${mysql.tenantUUIDs[index]}`,
-      ].join(" && ");
+   if (tarFileList.indexOf(tarFilename) < 0)
+      tarFileList.push(tarFilename);
 
-      shelljs.mkdir("-p", pathLocalDirectoryData);
+   try {
+      const result = shelljs.exec(commands, {
+         silent: true,
+         timeout: 300000,
+      });
 
-      try {
-         const result = shelljs.exec(commands, {
-            silent: true,
-            timeout: 300000,
-         });
+      shelljs.rm("-rf", pathLocalDirectoryTenant);
 
-         shelljs.rm("-rf", pathLocalDirectoryTenant);
+      if (result.code) {
+         const error = result.stderr;
 
-         if (result.code) {
-            const error = result.stderr;
-
-            shelljs.rm("-rf", `${pathLocalDirectoryTenant}*`);
-            shelljs.exec(
-               `docker exec ${containerDatabaseID} sh -c "rm -rf ${pathContainerFileSQL}"`
-            );
-
-            if (error.length) throw new Error(error);
-
-            throw new Error(`No such database "${dbName}"`);
-         }
-
-         if (tarFileList.indexOf(tarFilename) < 0)
-            tarFileList.push(tarFilename);
-
-         retry = 0;
-      } catch (error) {
-         healtcheck = `${process.env.HEALTH_CHECK_URL}/fail`;
-         console.error(error);
-         console.error();
-         index--;
-         retry++;
-      } finally {
-         if(process.env.HEALTH_CHECK_URL) {
-            https.get(healtcheck).on('error', (error) => {
-               console.log(`Ping failed: ${error}`);
-            });
-         }
-
-         console.log(
-            `Backup DB at "${dateNowString}": ${
-               !retry ? "Success" : "Fail"
-            }! (${dbName})`
+         shelljs.rm("-rf", `${pathLocalDirectoryTenant}*`);
+         shelljs.exec(
+            `docker exec ${containerDatabaseID} sh -c "rm -rf ${pathContainerFileSQL}"`
          );
 
-         if (retry === 3) {
-            retry = 0;
-            index++;
-         }
+         if (error.length) throw new Error(error);
+
+         throw new Error(`No such database "${dbName}"`);
+      }
+
+      retry = 0;
+   } catch (error) {
+      healtcheck = `${process.env.HEALTH_CHECK_URL}/fail`;
+      console.error(error);
+      console.error();
+      index--;
+      retry++;
+   } finally {
+      if(process.env.HEALTH_CHECK_URL) {
+         https.get(healtcheck).on('error', (error) => {
+            console.log(`Ping failed: ${error}`);
+         });
+      }
+
+      console.log(
+         `Backup DB at "${dateNowString}": ${
+            !retry ? "Success" : "Fail"
+         }! (${dbName})`
+      );
+
+      if (retry === 3) {
+         retry = 0;
+         index++;
       }
    }
+}
 
-   // Upload to cloud storage
-   const CLOUD_STORAGE = {
-      user: process.env.CLOUD_STORAGE_USER,
-      password: process.env.CLOUD_STORAGE_PASSWORD,
-      url: process.env.CLOUD_STORAGE_URL
-   };
-   tarFileList.forEach((tarFilename) => {
+// Upload to cloud storage
+const CLOUD_STORAGE = {
+   user: process.env.CLOUD_STORAGE_USER,
+   password: process.env.CLOUD_STORAGE_PASSWORD,
+   url: process.env.CLOUD_STORAGE_URL
+};
+tarFileList.forEach((tarFilename) => {
+   const tarFilePath = `${pathLocalStorage}/${tarFilename}`;
+
+   // Check exists
+   if (fs.existsSync(tarFilePath)) {
+      // Upload
       shelljs.exec(
-         `curl -u ${CLOUD_STORAGE.user}:${CLOUD_STORAGE.password} -T ${tarFilename} "${CLOUD_STORAGE.url}/remote.php/dav/files/${CLOUD_STORAGE.user}/${tarFilename}"`
+         `curl -u ${CLOUD_STORAGE.user}:${CLOUD_STORAGE.password} -T ${tarFilePath} "${CLOUD_STORAGE.url}/remote.php/dav/files/${CLOUD_STORAGE.user}/${tarFilename}"`
       );
-   });
-
-   console.log();
-
-   shelljs.exec(
-      `docker exec ${containerDatabaseID} sh -c "rm -rf ${pathContainerDatabaseStorage}" && find ${pathLocalStorage} -type f -mtime +${fileExpirationInDays} -delete`
-   );
+   }
 });
 
-backup.start();
+console.log();
+
+shelljs.exec(
+   `docker exec ${containerDatabaseID} sh -c "rm -rf ${pathContainerDatabaseStorage}" && find ${pathLocalStorage} -type f -mtime +${fileExpirationInDays} -delete`
+);
