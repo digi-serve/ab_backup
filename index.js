@@ -76,7 +76,7 @@ for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
    );
    const pathCointainerDirectoryTenant = `${pathContainerFileProcessorTenant}/${mysql.tenantUUIDs[index]}`;
    const pathContainerFileSQL = `${pathContainerDatabaseStorage}/${dbName}.sql`;
-   const tarFilename = `${dateNowString}_${mysql.tenantUUIDs[index]}.tar.gz`;
+   const tarFilename = `${mysql.tenantUUIDs[index]}_${dateNowString}.tar.gz`;
    const commands = [
       `docker exec ${containerDatabaseID} sh -c "mysqldump --max_allowed_packet=512M -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" \\"${dbName}\\" > ${pathContainerFileSQL} 2> /dev/null"`,
       `docker cp ${containerDatabaseID}:${pathContainerFileSQL} ${pathLocalDirectoryTenant}`,
