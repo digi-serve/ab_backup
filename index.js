@@ -1,3 +1,4 @@
+const fs = require("fs");
 const path = require("path");
 const https = require("https");
 
@@ -60,6 +61,8 @@ mysql.tenantUUIDs = shelljs
    .split("\n")
    .filter((e) => e !== "");
 
+let tarFileList = [];
+
 for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
    const dateNowString = new Date().toISOString().replace(/:/g, ".");
    const dbName = `${mysql.database}-${mysql.tenantUUIDs[index]}`;
@@ -73,6 +76,7 @@ for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
    );
    const pathCointainerDirectoryTenant = `${pathContainerFileProcessorTenant}/${mysql.tenantUUIDs[index]}`;
    const pathContainerFileSQL = `${pathContainerDatabaseStorage}/${dbName}.sql`;
+   const tarFilename = `${mysql.tenantUUIDs[index]}_${dateNowString}.tar.gz`;
    const commands = [
       `docker exec ${containerDatabaseID} sh -c "mysqldump --max_allowed_packet=512M -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" \\"${dbName}\\" > ${pathContainerFileSQL} 2> /dev/null"`,
       `docker cp ${containerDatabaseID}:${pathContainerFileSQL} ${pathLocalDirectoryTenant}`,
@@ -80,10 +84,13 @@ for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
       `docker exec ${containerFileProcessorID} sh -c "mkdir -p ${pathCointainerDirectoryTenant}"`,
       `docker cp ${containerFileProcessorID}:${pathCointainerDirectoryTenant}/. ${pathLocalDirectoryData}`,
       `cd ${pathLocalStorage}`,
-      `tar -czvf ${dateNowString}_${mysql.tenantUUIDs[index]}.tar.gz ${mysql.tenantUUIDs[index]}`,
+      `tar -czvf ${tarFilename} ${mysql.tenantUUIDs[index]}`,
    ].join(" && ");
 
    shelljs.mkdir("-p", pathLocalDirectoryData);
+
+   if (tarFileList.indexOf(tarFilename) < 0)
+      tarFileList.push(tarFilename);
 
    try {
       const result = shelljs.exec(commands, {
@@ -132,6 +139,25 @@ for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
       }
    }
 }
+
+// Upload to cloud storage
+const CLOUD_STORAGE = {
+   user: process.env.CLOUD_STORAGE_USER,
+   password: process.env.CLOUD_STORAGE_PASSWORD,
+   url: process.env.CLOUD_STORAGE_URL
+};
+tarFileList.forEach((tarFilename) => {
+   const tarFilePath = `${pathLocalStorage}/${tarFilename}`;
+
+   // Check exists
+   if (fs.existsSync(tarFilePath)) {
+      // Upload
+      shelljs.exec(
+         `curl -u ${CLOUD_STORAGE.user}:${CLOUD_STORAGE.password} -T ${tarFilePath} "${CLOUD_STORAGE.url}/remote.php/dav/files/${CLOUD_STORAGE.user}/${tarFilename}"`
+      );
+   }
+});
+
 console.log();
 
 shelljs.exec(
