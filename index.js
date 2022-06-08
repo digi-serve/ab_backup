@@ -62,6 +62,8 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
       .split("\n")
       .filter((e) => e !== "");
 
+   let tarFileList = [];
+
    for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
       const dateNowString = new Date().toISOString().replace(/:/g, ".");
       const dbName = `${mysql.database}-${mysql.tenantUUIDs[index]}`;
@@ -109,6 +111,9 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
             throw new Error(`No such database "${dbName}"`);
          }
 
+         if (tarFileList.indexOf(tarFilename) < 0)
+            tarFileList.push(tarFilename);
+
          retry = 0;
       } catch (error) {
          healtcheck = `${process.env.HEALTH_CHECK_URL}/fail`;
@@ -135,21 +140,23 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
          }
       }
    }
-   console.log();
-
-   shelljs.exec(
-      `docker exec ${containerDatabaseID} sh -c "rm -rf ${pathContainerDatabaseStorage}" && find ${pathLocalStorage} -type f -mtime +${fileExpirationInDays} -delete`
-   );
 
    // Upload to cloud storage
-   const storage = {
+   const CLOUD_STORAGE = {
       user: process.env.CLOUD_STORAGE_USER,
       password: process.env.CLOUD_STORAGE_PASSWORD,
       url: process.env.CLOUD_STORAGE_URL
    };
+   tarFileList.forEach((tarFilename) => {
+      shelljs.exec(
+         `curl -u ${CLOUD_STORAGE.user}:${CLOUD_STORAGE.password} -T ${tarFilename} "${CLOUD_STORAGE.url}/remote.php/dav/files/${CLOUD_STORAGE.user}/${tarFilename}"`
+      );
+   });
+
+   console.log();
 
    shelljs.exec(
-      `curl -u ${storage.user}:${storage.password} -T ${tarFilename} "${storage.url}/remote.php/dav/files/${storage.user}/${tarFilename}"`
+      `docker exec ${containerDatabaseID} sh -c "rm -rf ${pathContainerDatabaseStorage}" && find ${pathLocalStorage} -type f -mtime +${fileExpirationInDays} -delete`
    );
 });
 
