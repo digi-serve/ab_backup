@@ -149,7 +149,7 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
    };
 
    shelljs.exec(
-      `curl -u ${storage.user}:${storage.password} -T ${tarFilename}  "${storage.url}/remote.php/dav/files/${storage.user}/${tarFilename}"`
+      `curl -u ${storage.user}:${storage.password} -T ${tarFilename} "${storage.url}/remote.php/dav/files/${storage.user}/${tarFilename}"`
    );
 });
 
