@@ -39,7 +39,7 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
       .split("\n")
       .filter((e) => e !== "")
       .join("");
-   const pathLocalStorage = path.resolve("storage");
+   const pathLocalStorage = process.env.STORAGE_PATH;
    const pathContainerDatabaseStorage = "/root/storage";
    const pathContainerFileProcessorTenant = "/data";
 
