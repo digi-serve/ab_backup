@@ -75,6 +75,7 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
       );
       const pathCointainerDirectoryTenant = `${pathContainerFileProcessorTenant}/${mysql.tenantUUIDs[index]}`;
       const pathContainerFileSQL = `${pathContainerDatabaseStorage}/${dbName}.sql`;
+      const tarFilename = `${dateNowString}_${mysql.tenantUUIDs[index]}.tar.gz`;
       const commands = [
          `docker exec ${containerDatabaseID} sh -c "mysqldump --max_allowed_packet=512M -u\\"${mysql.user}\\" -p\\"${mysql.password}\\" \\"${dbName}\\" > ${pathContainerFileSQL} 2> /dev/null"`,
          `docker cp ${containerDatabaseID}:${pathContainerFileSQL} ${pathLocalDirectoryTenant}`,
@@ -82,7 +83,7 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
          `docker exec ${containerFileProcessorID} sh -c "mkdir -p ${pathCointainerDirectoryTenant}"`,
          `docker cp ${containerFileProcessorID}:${pathCointainerDirectoryTenant}/. ${pathLocalDirectoryData}`,
          `cd ${pathLocalStorage}`,
-         `tar -czvf ${dateNowString}_${mysql.tenantUUIDs[index]}.tar.gz ${mysql.tenantUUIDs[index]}`,
+         `tar -czvf ${tarFilename} ${mysql.tenantUUIDs[index]}`,
       ].join(" && ");
 
       shelljs.mkdir("-p", pathLocalDirectoryData);
@@ -138,6 +139,17 @@ const backup = nodeCron.schedule(process.env.NODE_CRON_EXPRESSION, () => {
 
    shelljs.exec(
       `docker exec ${containerDatabaseID} sh -c "rm -rf ${pathContainerDatabaseStorage}" && find ${pathLocalStorage} -type f -mtime +${fileExpirationInDays} -delete`
+   );
+
+   // Upload to cloud storage
+   const storage = {
+      user: process.env.CLOUD_STORAGE_USER,
+      password: process.env.CLOUD_STORAGE_PASSWORD,
+      url: process.env.CLOUD_STORAGE_URL
+   };
+
+   shelljs.exec(
+      `curl -u ${storage.user}:${storage.password} -T ${tarFilename}  "${storage.url}/remote.php/dav/files/${storage.user}/${tarFilename}"`
    );
 });
 
