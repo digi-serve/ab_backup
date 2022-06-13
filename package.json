@@ -2,7 +2,8 @@
   "dependencies": {
     "dotenv": "^16.0.0",
     "node-cron": "^3.0.0",
-    "shelljs": "^0.8.5"
+    "shelljs": "^0.8.5",
+    "xml2js": "^0.4.23"
   },
   "name": "ab_backup",
   "version": "1.0.0",
