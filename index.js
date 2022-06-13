@@ -5,9 +5,12 @@ const https = require("https");
 const dotenv = require("dotenv");
 const shelljs = require("shelljs");
 
+const CloudStorage = require("./utils/cloudStorage.js");
+
 if (process.env.NODE_ENV !== "production") dotenv.config();
 
 const config = require(`${process.env.AB_PATH}/config/local.js`);
+const cloudStorage = new CloudStorage();
 
 const mysql = {
    user: config.datastores.appbuilder.user,
@@ -140,26 +143,14 @@ for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
    }
 }
 
-// Upload to cloud storage
-const CLOUD_STORAGE = {
-   user: process.env.CLOUD_STORAGE_USER,
-   password: process.env.CLOUD_STORAGE_PASSWORD,
-   url: process.env.CLOUD_STORAGE_URL
-};
-tarFileList.forEach((tarFilename) => {
-   const tarFilePath = `${pathLocalStorage}/${tarFilename}`;
-
-   // Check exists
-   if (fs.existsSync(tarFilePath)) {
-      // Upload
-      shelljs.exec(
-         `curl -u ${CLOUD_STORAGE.user}:${CLOUD_STORAGE.password} -T ${tarFilePath} "${CLOUD_STORAGE.url}/remote.php/dav/files/${CLOUD_STORAGE.user}/${tarFilename}"`
-      );
-   }
-});
+// Upload backup files to Cloud Storage
+cloudStorage.uploadFiles(pathLocalStorage, tarFileList).then(() => {});
 
 console.log();
 
 shelljs.exec(
    `docker exec ${containerDatabaseID} sh -c "rm -rf ${pathContainerDatabaseStorage}" && find ${pathLocalStorage} -type f -mtime +${fileExpirationInDays} -delete`
 );
+
+// Clear expired files on Cloud Storage
+cloudStorage.clearExpiredFiles().then(() => {});
