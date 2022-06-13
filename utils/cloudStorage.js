@@ -108,12 +108,12 @@ module.exports = class CloudStorage {
 
 	async clearExpiredFiles() {
 		const fileNames = await this.getExpiredFilenames();
-		let tasks;
+		let tasks = [];
 
 		fileNames.forEach((fileName) => {
 			tasks.push(new Promise((next) => {
 				// Remove file
-				shelljs.exec(`curl -u ${CLOUD_STORAGE.user}:${CLOUD_STORAGE.password} -X "DELETE" "${CLOUD_STORAGE.url}/remote.php/dav/files/${CLOUD_STORAGE.user}/${fileName}"`,
+				shelljs.exec(`curl -u ${CLOUD_STORAGE_USER}:${CLOUD_STORAGE_PASSWORD} -X "DELETE" "${CLOUD_STORAGE_URL}/remote.php/dav/files/${CLOUD_STORAGE_USER}/${fileName}"`,
 					function () {
 						next();
 					});
