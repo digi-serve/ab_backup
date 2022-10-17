@@ -45,7 +45,7 @@ const pathLocalStorage = process.env.STORAGE_PATH;
 const pathContainerDatabaseStorage = "/root/storage";
 const pathContainerFileProcessorTenant = "/data";
 
-let healtcheck = process.env.HEALTH_CHECK_URL ?? null;
+let healthcheck = process.env.HEALTH_CHECK_URL ?? null;
 
 shelljs.mkdir("-p", pathLocalStorage);
 shelljs.exec(
@@ -65,6 +65,7 @@ mysql.tenantUUIDs = shelljs
    .filter((e) => e !== "");
 
 let tarFileList = [];
+let errorMessages = [];
 
 for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
    const dateNowString = new Date().toISOString().replace(/:/g, ".");
@@ -118,29 +119,49 @@ for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
 
       retry = 0;
    } catch (error) {
-      healtcheck = `${process.env.HEALTH_CHECK_URL}/fail`;
+      errorMessages.push(error.message || String(error);
       console.error(error);
       console.error();
       index--;
       retry++;
    } finally {
-      if(process.env.HEALTH_CHECK_URL) {
-         https.get(healtcheck).on('error', (error) => {
-            console.log(`Ping failed: ${error}`);
-         });
-      }
+      let message = `Backup DB at "${dateNowString}": ${
+         !retry ? "Success" : "Fail"
+      }! (${dbName})`;
+      console.log(message);
 
-      console.log(
-         `Backup DB at "${dateNowString}": ${
-            !retry ? "Success" : "Fail"
-         }! (${dbName})`
-      );
+      if (retry > 0) {
+         errorMessages.push(message);
+      }
 
       if (retry === 3) {
          retry = 0;
          index++;
       }
    }
+}
+
+//// Healthchecks.io
+if (!healthcheck) {
+   console.warn("No Healthchecks URL was configured. Cannot send ping.")
+}
+// No errors. Send normal ping.
+else if (errorMessages.length == 0) {
+   https.get(healthcheck).on('error', (error) => {
+      console.log(`Ping failed: ${error.message || error}`);
+   });
+} 
+// Send Fail ping.
+else {
+   let req = https.request(`${healthcheck}/fail`, {
+      method: "POST"
+   });
+   req.on('error', (error) => {
+      console.log(`Ping failed: ${error.message || error}`);
+   });
+   // Log error messages to Healthchecks.
+   req.write(errorMessages.join("\n"));
+   req.end();
 }
 
 // Upload backup files to Cloud Storage
