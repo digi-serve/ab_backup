@@ -119,7 +119,7 @@ for (let index = 0, retry = 0; index < mysql.tenantUUIDs.length; index++) {
 
       retry = 0;
    } catch (error) {
-      errorMessages.push(error.message || String(error);
+      errorMessages.push(error.message ?? String(error));
       console.error(error);
       console.error();
       index--;
@@ -148,7 +148,7 @@ if (!healthcheck) {
 // No errors. Send normal ping.
 else if (errorMessages.length == 0) {
    https.get(healthcheck).on('error', (error) => {
-      console.log(`Ping failed: ${error.message || error}`);
+      console.log(`Ping failed: ${error.message ?? error}`);
    });
 } 
 // Send Fail ping.
@@ -157,7 +157,7 @@ else {
       method: "POST"
    });
    req.on('error', (error) => {
-      console.log(`Ping failed: ${error.message || error}`);
+      console.log(`Ping failed: ${error.message ?? error}`);
    });
    // Log error messages to Healthchecks.
    req.write(errorMessages.join("\n"));
