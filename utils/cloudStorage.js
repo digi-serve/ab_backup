@@ -1,6 +1,9 @@
+const dotenv = require("dotenv");
 const fs = require("fs");
 const shelljs = require("shelljs");
 const { parseString } = require("xml2js");
+
+if (process.env.NODE_ENV !== "production") dotenv.config();
 
 const CLOUD_STORAGE_USER = process.env.CLOUD_STORAGE_USER;
 const CLOUD_STORAGE_PASSWORD = process.env.CLOUD_STORAGE_PASSWORD;
@@ -33,7 +36,7 @@ module.exports = class CloudStorage {
 
 			// Upload
 			shelljs.exec(
-				`curl -u ${CLOUD_STORAGE_USER}:${CLOUD_STORAGE_PASSWORD} -T ${tarFilePath} "${CLOUD_STORAGE_URL}/remote.php/dav/files/${CLOUD_STORAGE_USER}/${fileName}"`,
+				`curl -u '${CLOUD_STORAGE_USER}:${CLOUD_STORAGE_PASSWORD}' -T ${tarFilePath} "${CLOUD_STORAGE_URL}/remote.php/dav/files/${CLOUD_STORAGE_USER}/${fileName}"`,
 				function () {
 					resolve();
 				}
@@ -55,7 +58,7 @@ module.exports = class CloudStorage {
 			.then(() => new Promise((next) => {
 				// NOTE: <d:where><d:lt> does not work T T
 				shelljs.exec(
-					`curl -u ${CLOUD_STORAGE_USER}:${CLOUD_STORAGE_PASSWORD} "${CLOUD_STORAGE_URL}/remote.php/dav/" -X SEARCH -H "content-Type: text/xml" --data '<?xml version="1.0" encoding="UTF-8"?><d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:basicsearch><d:select><d:prop><d:getlastmodified/></d:prop></d:select><d:from><d:scope><d:href>/files/${CLOUD_STORAGE_USER}</d:href><d:depth>infinity</d:depth></d:scope></d:from><d:where><d:gte><d:prop><d:getlastmodified/></d:prop><d:literal>${expiredDate.toGMTString()}</d:literal></d:gte></d:where><d:orderby/></d:basicsearch></d:searchrequest>'`,
+					`curl -u '${CLOUD_STORAGE_USER}:${CLOUD_STORAGE_PASSWORD}' "${CLOUD_STORAGE_URL}/remote.php/dav/" -X SEARCH -H "content-Type: text/xml" --data '<?xml version="1.0" encoding="UTF-8"?><d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:basicsearch><d:select><d:prop><d:getlastmodified/></d:prop></d:select><d:from><d:scope><d:href>/files/${CLOUD_STORAGE_USER}</d:href><d:depth>infinity</d:depth></d:scope></d:from><d:where><d:gte><d:prop><d:getlastmodified/></d:prop><d:literal>${expiredDate.toGMTString()}</d:literal></d:gte></d:where><d:orderby/></d:basicsearch></d:searchrequest>'`,
 
 					function (code, stdout, stderr) {
 						let result = stdout;
@@ -113,7 +116,7 @@ module.exports = class CloudStorage {
 		fileNames.forEach((fileName) => {
 			tasks.push(new Promise((next) => {
 				// Remove file
-				shelljs.exec(`curl -u ${CLOUD_STORAGE_USER}:${CLOUD_STORAGE_PASSWORD} -X "DELETE" "${CLOUD_STORAGE_URL}/remote.php/dav/files/${CLOUD_STORAGE_USER}/${fileName}"`,
+				shelljs.exec(`curl -u '${CLOUD_STORAGE_USER}:${CLOUD_STORAGE_PASSWORD}' -X "DELETE" "${CLOUD_STORAGE_URL}/remote.php/dav/files/${CLOUD_STORAGE_USER}/${fileName}"`,
 					function () {
 						next();
 					});
